@@ -1,0 +1,139 @@
+(ns provider.incidence-test
+  (:require [clojure.test :refer [deftest is testing]]
+            [kotoba.lang.capability-values :as capabilities]
+            [kotoba.lang.incidence :as incidence]
+            [kotoba.lang.incidence-port :as port]
+            [kotoba.lang.incidence-replication :as replication]
+            [provider.incidence :as durable])
+  (:import [java.nio.charset StandardCharsets]
+           [java.nio.file Files Path StandardOpenOption]
+           [java.nio.file.attribute FileAttribute]))
+
+(def dataspace "dataspace:rooms/a")
+(def alice (incidence/typed-ref :did "did:key:z6Mkalice"))
+(def cap (capabilities/make-cap port/append-kind dataspace))
+
+(def parent
+  (incidence/assertion
+   (incidence/incidence :presence/online {:participant #{alice}} {})))
+
+(def child
+  (incidence/assertion
+   (incidence/incidence :presence/status
+                        {:participant #{alice}}
+                        {:parents #{(:incidence/cid parent)}
+                         :facts {:status :available}})))
+
+(defn- temp-dir []
+  (Files/createTempDirectory "provider-incidence-"
+                             (make-array FileAttribute 0)))
+
+(defn- delete-tree! [^Path root]
+  (when (Files/exists root (make-array java.nio.file.LinkOption 0))
+    (with-open [walk (Files/walk root (make-array java.nio.file.FileVisitOption 0))]
+      (doseq [path (reverse (sort-by #(.getNameCount ^Path %)
+                                    (iterator-seq (.iterator walk))))]
+        (Files/deleteIfExists ^Path path)))))
+
+(defn- with-temp-dirs* [n f]
+  (let [roots (vec (repeatedly n temp-dir))]
+    (try (f roots)
+         (finally (doseq [root roots] (delete-tree! root))))))
+
+(defn- append-request [entry]
+  {:dataspace dataspace :entry entry :capability cap})
+
+(deftest append-fsync-readback-and-restart-recovery
+  (with-temp-dirs*
+    1
+    (fn [[root]]
+      (let [store (durable/open-store root dataspace)
+            receipt (durable/append! store (append-request parent))]
+        (is (= :dataspace/append-durable
+               (get-in receipt [:incidence/block :incidence/kind])))
+        (is (= [parent] (durable/entries store)))
+        (let [reopened (durable/open-store root dataspace)
+              replica (durable/recover reopened)]
+          (is (= #{(:incidence/cid parent)}
+                 (set (keys (:replica/blocks replica)))))
+          (is (:ok? (replication/projection replica))))))))
+
+(deftest append-is-idempotent-and-capability-scope-is-rechecked
+  (with-temp-dirs*
+    1
+    (fn [[root]]
+      (let [store (durable/open-store root dataspace)
+            first-receipt (durable/append! store (append-request parent))
+            second-receipt (durable/append! store (append-request parent))]
+        (is (= first-receipt second-receipt))
+        (is (= 1 (count (durable/entries store))))
+        (doseq [[problem request]
+                [[:incidence-store/capability-resource
+                  (assoc (append-request parent)
+                         :capability (capabilities/make-cap
+                                      port/append-kind "dataspace:other"))]
+                 [:incidence-store/capability-kind
+                  (assoc (append-request parent)
+                         :capability (capabilities/make-cap
+                                      :host/http dataspace))]
+                 [:incidence-store/dataspace-mismatch
+                  (assoc (append-request parent) :dataspace "dataspace:other")]]]
+          (is (= problem
+                 (:problem
+                  (ex-data
+                   (try (durable/append! store request)
+                        (catch clojure.lang.ExceptionInfo error error)))))))))))
+
+(deftest corrupted-physical-block-fails-closed-on-recovery
+  (with-temp-dirs*
+    1
+    (fn [[root]]
+      (let [store (durable/open-store root dataspace)
+            _ (durable/append! store (append-request parent))
+            path (.resolve (.resolve root "blocks")
+                           (str (:incidence/cid parent) ".edn"))]
+        (Files/write path (.getBytes "{:forged true}" StandardCharsets/UTF_8)
+                     (into-array java.nio.file.OpenOption
+                                 [StandardOpenOption/TRUNCATE_EXISTING
+                                  StandardOpenOption/WRITE]))
+        (is (= :incidence-store/cid-mismatch
+               (:problem
+                (ex-data
+                 (try (durable/recover (durable/open-store root dataspace))
+                      (catch clojure.lang.ExceptionInfo error error))))))))))
+
+(deftest independent-three-directory-recovery-survives-source-loss
+  (with-temp-dirs*
+    4
+    (fn [[root-a root-b root-c root-replacement]]
+      (let [a (durable/open-store root-a dataspace)
+            b (durable/open-store root-b dataspace)
+            c (durable/open-store root-c dataspace)]
+        (durable/append! a (append-request child))
+        (durable/append! a (append-request parent))
+        (let [receipts (durable/replicate!
+                        a [{:store b :capability cap}
+                           {:store c :capability cap}])]
+          (is (= [2 2] (mapv :entries receipts))))
+        (testing "node A is no longer consulted"
+          (let [reopened-b (durable/open-store root-b dataspace)
+                recovered (durable/recover reopened-b)
+                replacement (durable/open-store root-replacement dataspace)]
+            (is (= #{(:incidence/cid parent) (:incidence/cid child)}
+                   (set (keys (:replica/blocks recovered)))))
+            (is (:ok? (replication/projection recovered)))
+            (durable/replicate! reopened-b [{:store replacement
+                                             :capability cap}])
+            (is (= (set (durable/entries c))
+                   (set (durable/entries replacement))))))))))
+
+(deftest metadata-prevents-cross-dataspace-reopen
+  (with-temp-dirs*
+    1
+    (fn [[root]]
+      (durable/open-store root dataspace)
+      (is (= :incidence-store/metadata-mismatch
+             (:problem
+              (ex-data
+               (try (durable/open-store root "dataspace:other")
+                    (catch clojure.lang.ExceptionInfo error error)))))))))

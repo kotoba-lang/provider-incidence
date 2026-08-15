@@ -1,0 +1,35 @@
+{:provider-incidence.qualification/version 1
+ :measured-at "2026-08-15"
+ :implementation-scope
+ [:fsync-append :cid-readback :inert-bundle :restart-recovery
+  :partition-healing :physical-source-loss]
+ :local-resumable-soak
+ {:command "clojure -M:soak /private/tmp/provider-incidence-soak-20260815 1000"
+  :segments
+  [{:start 0 :target 250 :partitions 55 :restarts 19
+    :duration-ms 39458 :passed? true}
+   {:start 250 :target 500 :partitions 56 :restarts 19
+    :duration-ms 72356 :passed? true}
+   {:start 500 :target 1000 :partitions 197 :restarts 38
+    :duration-ms 17675 :passed? true}]
+  :final {:entries-per-replica 1000
+          :b-projection-ok? true :c-projection-ok? true
+          :b-byte-set-equal? true :c-byte-set-equal? true}}
+ :physical-three-machine-drill
+ {:source {:node "judah" :store "/tmp/kotoba-physical-20260815/store-a"}
+  :replicas [{:node "benjamin" :store "/tmp/kotoba-physical-20260815/store-b"}
+             {:node "simeon" :store "/tmp/kotoba-physical-20260815/store-c"}]
+  :transport "scp via operator; inert bundle only"
+  :source-loss "source directory removed and absence confirmed before recovery"
+  :recovered-cids
+  ["bafyreih6aefscxek7qiqmoicohyx32osx76iymasouclytqwcbin7xvjfm"
+   "bafyreihgwzfpc6nkb4tiiznhqbyhq4gikbwjfznlrfemj7x6iyv35f4wxy"]
+  :benjamin {:count 2 :projection-ok? true}
+  :simeon {:count 2 :projection-ok? true}
+  :passed? true
+  :cleanup "all three remote temporary drill trees removed"}
+ :claim-boundary
+ {:proven [:bounded-stress :resume-from-250-and-500
+           :independent-machine-transfer :recovery-after-source-loss]
+  :not-proven [:multi-day-retention :power-loss-during-fsync
+               :byzantine-storage :production-slo]}}

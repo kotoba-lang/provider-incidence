@@ -137,3 +137,37 @@
               (ex-data
                (try (durable/open-store root "dataspace:other")
                     (catch clojure.lang.ExceptionInfo error error)))))))))
+
+(deftest inert-bundle-crosses-a-physical-boundary-without-authority
+  (with-temp-dirs*
+    2
+    (fn [[source-root target-root]]
+      (let [source (durable/open-store source-root dataspace)
+            target (durable/open-store target-root dataspace)]
+        (durable/append! source (append-request parent))
+        (durable/append! source (append-request child))
+        (let [bytes (durable/export-bundle source)
+              text (String. bytes StandardCharsets/UTF_8)
+              result (durable/import-bundle! target cap bytes)]
+          (is (= 2 (:incidence-bundle/imported result)))
+          (is (not (.contains text ":cap/kind")))
+          (is (= (set (durable/entries source))
+                 (set (durable/entries target)))))))))
+
+(deftest bundle-is-validated-whole-before-any-append
+  (with-temp-dirs*
+    1
+    (fn [[root]]
+      (let [target (durable/open-store root dataspace)
+            forged (.getBytes
+                    (pr-str {:incidence-bundle/version durable/version
+                             :incidence-bundle/dataspace dataspace
+                             :incidence-bundle/entries
+                             [parent (assoc child :incidence/cid "forged")]})
+                    StandardCharsets/UTF_8)]
+        (is (= :incidence-store/bundle-invalid
+               (:problem
+                (ex-data
+                 (try (durable/import-bundle! target cap forged)
+                      (catch clojure.lang.ExceptionInfo error error))))))
+        (is (empty? (durable/entries target)))))))

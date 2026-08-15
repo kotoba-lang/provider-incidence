@@ -19,8 +19,27 @@ The adapter re-checks the concrete `:host/ledger-append` capability and exact
 dataspace at the native filesystem boundary. The directory object and live
 provider are runtime capabilities; neither is serialized.
 
+`export-bundle` / `import-bundle!` provide a bounded inert-EDN transfer
+boundary. A bundle contains no capability; the receiver supplies a fresh
+dataspace-scoped append capability, and the complete bundle is CID-validated
+before the first target append.
+
+Qualification entrypoints live outside the production classpath:
+
+```bash
+clojure -M:physical-drill seed ROOT BUNDLE
+clojure -M:physical-drill import ROOT BUNDLE
+clojure -M:physical-drill recover ROOT
+
+# Resumable target count with multi-cycle B/C partitions and store reopen.
+clojure -M:soak ROOT 1000
+```
+
+The physical drill is meant to run the phases on separate hosts and remove
+the source host's temporary store before recovery. Three directories on one
+disk remain a local durability test, not multi-machine evidence.
+
 ```bash
 clojure -M:test
 clojure -M:lint
 ```
-

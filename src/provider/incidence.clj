@@ -15,6 +15,7 @@
 (def version 1)
 (def default-max-blocks 100000)
 (def default-max-block-bytes (* 1024 1024))
+(def default-max-bundle-bytes (* 64 1024 1024))
 
 (defprotocol ^:private DurableStoreValue
   (-store-info [store])
@@ -284,3 +285,68 @@
             {:store (description store)
              :entries (count source-entries)})
           targets)))
+
+(defn export-bundle
+  "Export verified entries as inert EDN bytes, never serialized authority.
+
+  The bundle is transport-independent: a caller may carry these bytes over an
+  authenticated CapTP/net capability, removable media, or a fleet channel.
+  Import still needs a fresh append capability scoped to the target store."
+  [store]
+  (when-not (store? store)
+    (throw (ex-info "durable incidence store required"
+                    {:problem :incidence-store/store-required})))
+  (let [info (-store-info store)]
+    (.getBytes
+     (pr-str {:incidence-bundle/version version
+              :incidence-bundle/dataspace (:store/dataspace info)
+              :incidence-bundle/entries (entries store)})
+     StandardCharsets/UTF_8)))
+
+(defn import-bundle!
+  "Verify and fsync every entry from inert bundle BYTES into STORE.
+
+  Import is not authority reconstruction. CAPABILITY is rechecked for every
+  append, and a malformed, oversized, cross-dataspace, or forged bundle is
+  rejected before any entry is written."
+  ([store capability bytes]
+   (import-bundle! store capability bytes {}))
+  ([store capability bytes {:keys [max-bundle-bytes]
+                            :or {max-bundle-bytes default-max-bundle-bytes}}]
+   (when-not (and (store? store)
+                  (= (class bytes) (Class/forName "[B"))
+                  (int? max-bundle-bytes) (pos? max-bundle-bytes))
+     (throw (ex-info "bundle import inputs are invalid"
+                     {:problem :incidence-store/bundle-input})))
+   (when (> (alength ^bytes bytes) max-bundle-bytes)
+     (throw (ex-info "incidence bundle exceeds byte bound"
+                     {:problem :incidence-store/bundle-too-large})))
+   (let [bundle (try
+                  (read-edn-bytes bytes)
+                  (catch Exception error
+                    (throw (ex-info "incidence bundle is not inert EDN"
+                                    {:problem :incidence-store/bundle-edn-invalid}
+                                    error))))
+         info (-store-info store)
+         expected-keys #{:incidence-bundle/version
+                         :incidence-bundle/dataspace
+                         :incidence-bundle/entries}
+         bundle-entries (:incidence-bundle/entries bundle)]
+     (when-not (and (map? bundle)
+                    (= expected-keys (set (keys bundle)))
+                    (= version (:incidence-bundle/version bundle))
+                    (= (:store/dataspace info)
+                       (:incidence-bundle/dataspace bundle))
+                    (vector? bundle-entries)
+                    (<= (count bundle-entries) (:store/max-blocks info))
+                    ;; Validate the complete transfer before the first fsync.
+                    (every? #(true? (:ok? (incidence/verify-addressed %)))
+                            bundle-entries))
+       (throw (ex-info "incidence bundle is invalid"
+                       {:problem :incidence-store/bundle-invalid})))
+     (doseq [entry bundle-entries]
+       (append! store {:dataspace (:store/dataspace info)
+                       :entry entry
+                       :capability capability}))
+     {:incidence-bundle/imported (count bundle-entries)
+      :incidence-bundle/cids (mapv :incidence/cid bundle-entries)})))

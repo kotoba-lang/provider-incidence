@@ -1,4 +1,4 @@
-{:provider-incidence.qualification/version 1
+{:provider-incidence.qualification/version 2
  :measured-at "2026-08-15"
  :implementation-scope
  [:fsync-append :cid-readback :inert-bundle :restart-recovery
@@ -28,8 +28,23 @@
   :simeon {:count 2 :projection-ok? true}
   :passed? true
   :cleanup "all three remote temporary drill trees removed"}
+ :multi-day-soak
+ {:status :running
+  :started-at "2026-08-15T14:37:43Z"
+  :earliest-completion "2026-08-17T14:37:43Z"
+  :source-commit "636ffdd27dbb3e713808537bd48ff2dc5cdc754f"
+  :nodes ["judah" "benjamin" "simeon"]
+  :node-root-suffix ".gftd/provider-incidence-long-soak-20260815"
+  :schedule {:checkpoint-seconds 600
+             :entries-per-checkpoint 10
+             :final-entries-per-replica 2890}
+  :first-checkpoint
+  {:entries-per-replica 10 :projection-ok? true :byte-set-equal? true}
+  :qualification-rule
+  "Not proven until all three logs contain the final finished timestamp and every checkpoint passed."}
  :claim-boundary
  {:proven [:bounded-stress :resume-from-250-and-500
            :independent-machine-transfer :recovery-after-source-loss]
-  :not-proven [:multi-day-retention :power-loss-during-fsync
+  :in-progress [:multi-day-retention]
+  :not-proven [:power-loss-during-fsync
                :byzantine-storage :production-slo]}}

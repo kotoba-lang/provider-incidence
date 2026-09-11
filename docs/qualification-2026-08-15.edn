@@ -4,7 +4,7 @@
  [:fsync-append :cid-readback :inert-bundle :restart-recovery
   :partition-healing :physical-source-loss]
  :local-resumable-soak
- {:command "clojure -M:soak /private/tmp/provider-incidence-soak-20260815 1000"
+ {:command "kbb -M:soak /private/tmp/provider-incidence-soak-20260815 1000"
   :segments
   [{:start 0 :target 250 :partitions 55 :restarts 19
     :duration-ms 39458 :passed? true}

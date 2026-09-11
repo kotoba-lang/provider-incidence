@@ -27,12 +27,12 @@ before the first target append.
 Qualification entrypoints live outside the production classpath:
 
 ```bash
-clojure -M:physical-drill seed ROOT BUNDLE
-clojure -M:physical-drill import ROOT BUNDLE
-clojure -M:physical-drill recover ROOT
+kbb -M:physical-drill seed ROOT BUNDLE
+kbb -M:physical-drill import ROOT BUNDLE
+kbb -M:physical-drill recover ROOT
 
 # Resumable target count with multi-cycle B/C partitions and store reopen.
-clojure -M:soak ROOT 1000
+kbb -M:soak ROOT 1000
 ```
 
 The physical drill is meant to run the phases on separate hosts and remove
@@ -40,6 +40,6 @@ the source host's temporary store before recovery. Three directories on one
 disk remain a local durability test, not multi-machine evidence.
 
 ```bash
-clojure -M:test
-clojure -M:lint
+kbb -M:test
+kbb -M:lint
 ```

@@ -1,6 +1,6 @@
 (ns provider.incidence
   "Physical, capability-scoped incidence storage over an explicit directory."
-  (:require [clojure.edn :as edn]
+  (:require [kotoba.lang.edn :as edn]
             [kotoba.lang.capability-values :as capabilities]
             [kotoba.lang.incidence :as incidence]
             [kotoba.lang.incidence-port :as port]

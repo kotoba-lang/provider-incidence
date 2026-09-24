@@ -1,13 +1,12 @@
 (ns provider.incidence
   "Physical, capability-scoped incidence storage over an explicit directory."
-  (:require [kotoba.lang.edn :as edn]
+  (:require [kotoba.bytes :as kbytes] [kotoba.lang.edn :as edn]
             [kotoba.lang.capability-values :as capabilities]
             [kotoba.lang.incidence :as incidence]
             [kotoba.lang.incidence-port :as port]
             [kotoba.lang.incidence-replication :as replication])
   (:import [java.nio ByteBuffer]
            [java.nio.channels FileChannel]
-           [java.nio.charset StandardCharsets]
            [java.nio.file AtomicMoveNotSupportedException FileAlreadyExistsException
             Files LinkOption OpenOption Path StandardCopyOption StandardOpenOption]
            [java.nio.file.attribute FileAttribute]))
@@ -45,7 +44,7 @@
 
 (defn- read-edn-bytes [bytes]
   (edn/read-string {:readers {} :default reject-tag}
-                   (String. ^bytes bytes StandardCharsets/UTF_8)))
+                   (kbytes/utf8-string ^bytes bytes)))
 
 (defn- write-all! [^FileChannel channel ^bytes bytes]
   (let [buffer (ByteBuffer/wrap bytes)]
@@ -84,8 +83,7 @@
         (Files/deleteIfExists temp)))))
 
 (defn- metadata-bytes [dataspace]
-  (.getBytes (pr-str {:store/version version :store/dataspace dataspace})
-             StandardCharsets/UTF_8))
+  (kbytes/utf8-bytes (pr-str {:store/version version :store/dataspace dataspace})))
 
 (defn- ensure-metadata! [^Path root dataspace]
   (let [path (.resolve root "store.edn")
@@ -140,7 +138,7 @@
   (.resolve ^Path (:store/blocks (-store-info store)) (str cid ".edn")))
 
 (defn- entry-bytes [entry]
-  (.getBytes (pr-str entry) StandardCharsets/UTF_8))
+  (kbytes/utf8-bytes (pr-str entry)))
 
 (defn- read-entry! [store ^Path path]
   (let [info (-store-info store)
@@ -297,11 +295,10 @@
     (throw (ex-info "durable incidence store required"
                     {:problem :incidence-store/store-required})))
   (let [info (-store-info store)]
-    (.getBytes
+    (kbytes/utf8-bytes
      (pr-str {:incidence-bundle/version version
               :incidence-bundle/dataspace (:store/dataspace info)
-              :incidence-bundle/entries (entries store)})
-     StandardCharsets/UTF_8)))
+              :incidence-bundle/entries (entries store)}))))
 
 (defn import-bundle!
   "Verify and fsync every entry from inert bundle BYTES into STORE.

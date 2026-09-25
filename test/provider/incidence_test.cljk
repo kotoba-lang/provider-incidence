@@ -1,5 +1,5 @@
 (ns provider.incidence-test
-  (:require [kotoba.bytes :as kbytes] [kotoba.test :refer [deftest is testing]]
+  (:require [kotoba.lang.error :as kerror] [kotoba.bytes :as kbytes] [kotoba.test :refer [deftest is testing]]
             [kotoba.lang.capability-values :as capabilities]
             [kotoba.lang.incidence :as incidence]
             [kotoba.lang.incidence-port :as port]
@@ -82,7 +82,7 @@
                  (:problem
                   (ex-data
                    (try (durable/append! store request)
-                        (catch clojure.lang.ExceptionInfo error error)))))))))))
+                        (catch kerror/ExceptionInfo error error)))))))))))
 
 (deftest corrupted-physical-block-fails-closed-on-recovery
   (with-temp-dirs*
@@ -100,7 +100,7 @@
                (:problem
                 (ex-data
                  (try (durable/recover (durable/open-store root dataspace))
-                      (catch clojure.lang.ExceptionInfo error error))))))))))
+                      (catch kerror/ExceptionInfo error error))))))))))
 
 (deftest independent-three-directory-recovery-survives-source-loss
   (with-temp-dirs*
@@ -136,7 +136,7 @@
              (:problem
               (ex-data
                (try (durable/open-store root "dataspace:other")
-                    (catch clojure.lang.ExceptionInfo error error)))))))))
+                    (catch kerror/ExceptionInfo error error)))))))))
 
 (deftest inert-bundle-crosses-a-physical-boundary-without-authority
   (with-temp-dirs*
@@ -168,5 +168,5 @@
                (:problem
                 (ex-data
                  (try (durable/import-bundle! target cap forged)
-                      (catch clojure.lang.ExceptionInfo error error))))))
+                      (catch kerror/ExceptionInfo error error))))))
         (is (empty? (durable/entries target)))))))
